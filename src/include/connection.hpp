@@ -96,8 +96,7 @@ struct connection_t : public rxcpp::sources::source_base<std::string>
           auto result = std::move(state->read());
 
           if(result.size() == 0) {
-            sub.on_completed();
-            return false;
+	    sub.on_completed();
           }
 
 	  sub.on_next(result);

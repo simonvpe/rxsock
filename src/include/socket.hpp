@@ -43,6 +43,10 @@ public:
     }
   }
 
+  ~socket_t() {
+    ::close(fd);
+  }
+
   int file_descriptor() const { return fd; }
 
 private:
