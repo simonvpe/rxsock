@@ -2,10 +2,11 @@
 
 #include "socket.hpp"
 #include <rxcpp/rx.hpp>
+#include <string>
 
 namespace rxsock {
 
-struct connection_t : public rxcpp::sources::source_base<char>
+struct connection_t : public rxcpp::sources::source_base<std::string>
 {
   struct connection_t_state_type {
     connection_t_state_type() = delete;
@@ -34,10 +35,10 @@ struct connection_t : public rxcpp::sources::source_base<char>
       std::cerr << "Connection established " << connection_fd << '\n';
     }
 
-    std::vector<char> read()
+    std::string read()
     {
       constexpr size_t buffer_size = 1024;
-      std::vector<char> buffer(buffer_size);
+      std::string buffer(buffer_size, '\0');
       auto res = ::read(connection_fd, buffer.data(), buffer_size);
       if(res == -1) {
         throw std::runtime_error(strerror(errno));
@@ -99,8 +100,7 @@ struct connection_t : public rxcpp::sources::source_base<char>
             return false;
           }
 
-          auto next = [&](char byte) { sub.on_next(byte); };
-          std::for_each(cbegin(result), cend(result), next);
+	  sub.on_next(result);
         } catch(...) {
           sub.on_error(std::current_exception());
           return false;
@@ -112,9 +112,9 @@ struct connection_t : public rxcpp::sources::source_base<char>
   }
 };
 
-class connection : public rxcpp::observable<char, connection_t> {
+class connection : public rxcpp::observable<std::string, connection_t> {
 public:
-  connection(connection_t conn) : conn{conn}, rxcpp::observable<char, connection_t>(conn) {}
+  connection(connection_t conn) : conn{conn}, rxcpp::observable<std::string, connection_t>(conn) {}
   void write(std::vector<char>&& data) const { conn.state->write(std::forward<std::vector<char>>(data)); }
   void write(std::string&& data) const { conn.state->write(std::forward<std::string>(data)); }
   void write(char byte) const { conn.state->write(byte); }

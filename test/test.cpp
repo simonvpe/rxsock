@@ -7,6 +7,17 @@
 #include <iostream>
 #include <stdexcept>
 #include <algorithm>
+#include <regex>
+
+#include <rxcpp/operators/rx-concat_map.hpp>
+
+namespace Rx {
+  using namespace rxcpp;
+  using namespace rxcpp::sources;
+  using namespace rxcpp::operators;
+  using namespace rxcpp::util;
+}
+using namespace Rx;
 
 struct headers {};
 
@@ -23,12 +34,12 @@ SCENARIO("hej") {
 
   auto on_socket_connected = [on_error](rxsock::connection conn) {
 
-    auto on_read = [](char byte) {
-      std::cout << "Byte: " << byte << '\n';
+    auto on_read = [](std::string data) {
+      std::cout << "Read: " << data << '\n';
     };
 
-    auto echo = [conn](char byte) {
-      conn.write(byte);
+    auto echo = [conn](std::string data) {
+      conn.write(std::move(data));
     };
 
     auto on_completed = [] {
@@ -36,16 +47,25 @@ SCENARIO("hej") {
     };
 
     conn
-    .subscribe_on(rxcpp::synchronize_new_thread())
-    .tap(echo)
-    .subscribe(on_read, on_error, on_completed);
+    | subscribe_on(rxcpp::synchronize_new_thread())
+    | concat_map([](std::string s) {
+	using namespace std;
+	regex delim("(k)");
+	cregex_token_iterator cursor(&s[0], &s[0] + s.size(), delim, {-1, 0});
+	cregex_token_iterator end;
+	vector<string> splits(cursor, end);
+	return rxcpp::sources::iterate(move(splits));
+      })
+    | filter([](const std::string& s) {
+	return !s.empty();
+      })
+    | subscribe<std::string>(on_read, on_error, on_completed);
 
     std::string data("hello");
     conn.write(std::move(data));
   };
 
   rxsock::make_server(5000)
-    .retry(10)
     .as_blocking()
     .subscribe(on_socket_connected, on_error);
 }
