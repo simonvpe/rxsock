@@ -105,8 +105,11 @@ struct connection_t : public rxcpp::sources::source_base<char>
       }
     }
 
-    void close() const {
-      ::close(connection_fd);
+    void write(char byte) const
+    {
+      if(::write(connection_fd, &byte, 1) == -1) {
+        throw std::runtime_error(strerror(errno));
+      }
     }
 
     sockaddr client_addr;
@@ -158,7 +161,7 @@ class connection : public rxcpp::observable<char, connection_t> {
 public:
   connection(connection_t conn) : conn{conn}, rxcpp::observable<char, connection_t>(conn) {}
   void write(std::vector<char>&& data) const { conn.state->write(std::forward<std::vector<char>>(data)); }
-  void close() const { conn.state->close(); }
+  void write(char byte) const { conn.state->write(byte); }
 private:
   connection_t conn;
 };
@@ -185,12 +188,12 @@ auto make_server(unsigned long port) {
 
 }
 
+struct headers {};
+
 SCENARIO("hej") {
   using namespace std::chrono_literals;
 
-  auto threads = rxcpp::observe_on_event_loop();
-
-  auto error = [](std::exception_ptr eptr) {
+  auto on_error = [](std::exception_ptr eptr) {
     try {
       std::rethrow_exception(eptr);
     } catch(const std::exception& e) {
@@ -198,16 +201,14 @@ SCENARIO("hej") {
     }
   };
 
-  auto socket_connected = [&threads,error](rxsock::connection conn) {
+  auto on_socket_connected = [on_error](rxsock::connection conn) {
 
     auto on_read = [](char byte) {
       std::cout << "Byte: " << byte << '\n';
     };
 
     auto echo = [conn](char byte) {
-      std::vector<char> data{byte};
-      conn.write(std::move(data));
-      conn.close();
+      conn.write(byte);
     };
 
     auto on_completed = [] {
@@ -215,13 +216,16 @@ SCENARIO("hej") {
     };
 
     conn
-    .subscribe_on(threads)
+    .subscribe_on(rxcpp::synchronize_new_thread())
     .tap(echo)
-    .subscribe(on_read, error, on_completed);
+    .subscribe(on_read, on_error, on_completed);
+
+    std::vector<char> data = {'H', 'e', 'l', 'l', 'o'};
+    conn.write(std::move(data));
   };
 
   rxsock::make_server(5000)
     .retry(10)
     .as_blocking()
-    .subscribe(socket_connected, error);
+    .subscribe(on_socket_connected, on_error);
 }
