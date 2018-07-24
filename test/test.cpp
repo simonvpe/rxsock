@@ -21,6 +21,22 @@ using namespace Rx;
 
 struct headers {};
 
+const auto tokenize_on(std::regex delim) {
+  return [=](observable<std::string> obs) {
+    return obs
+      | concat_map([delim](std::string s) {
+	  using namespace std;
+	  cregex_token_iterator cursor(&s[0], &s[0] + s.size(), delim, {-1, 0});
+	  cregex_token_iterator end;
+	  vector<string> splits(cursor, end);
+	  return rxcpp::sources::iterate(move(splits));
+	})
+      | filter([](const std::string& s) {
+	  return !s.empty();
+	});
+  };
+}
+
 SCENARIO("hej") {
   using namespace std::chrono_literals;
 
@@ -48,17 +64,7 @@ SCENARIO("hej") {
 
     conn
     | subscribe_on(rxcpp::synchronize_new_thread())
-    | concat_map([](std::string s) {
-	using namespace std;
-	regex delim("(k)");
-	cregex_token_iterator cursor(&s[0], &s[0] + s.size(), delim, {-1, 0});
-	cregex_token_iterator end;
-	vector<string> splits(cursor, end);
-	return rxcpp::sources::iterate(move(splits));
-      })
-    | filter([](const std::string& s) {
-	return !s.empty();
-      })
+    | tokenize_on(std::regex("\n"))
     | subscribe<std::string>(on_read, on_error, on_completed);
 
     std::string data("hello");
